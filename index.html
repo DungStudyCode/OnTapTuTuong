@@ -1,108 +1,137 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quiz Study</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz Study - Ôn Tập Trắc Nghiệm</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <!-- Màn hình Trang chủ -->
-        <div id="home-screen" class="screen active">
-            <div class="header-logo">
-                <h1>Quiz Study</h1>
-                <p class="subtitle">Hệ thống ôn tập kiến thức</p>
-            </div>
-            
-            <div class="stats-card">
-                <h2>Thống kê học tập</h2>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <span class="stat-value" id="stat-total">0</span>
-                        <span class="stat-label">Câu đã làm</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value text-success" id="stat-correct">0</span>
-                        <span class="stat-label">Câu đúng</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value text-primary" id="stat-accuracy">0%</span>
-                        <span class="stat-label">Tỷ lệ chính xác</span>
-                    </div>
-                </div>
-            </div>
-            
-            
-            <div class="stats-card">
-                <h2>Chọn bộ câu hỏi</h2>
-                <div class="set-selection" style="display: flex; gap: 10px; flex-direction: column;">
-                    <button id="btn-set1" class="btn outline" style="border: 1px solid var(--primary); color: var(--primary);">Bộ 1 (Câu 1 - 30)</button>
-                    <button id="btn-set2" class="btn outline" style="border: 1px solid var(--primary); color: var(--primary);">Bộ 2 (Câu 31 - 60)</button>
-                    <button id="btn-set3" class="btn outline" style="border: 1px solid var(--primary); color: var(--primary);">Bộ 3 (Câu 61 - 90)</button>
-                    <button id="btn-set-short" class="btn outline" style="border: 1px solid var(--primary); color: var(--primary);">Bộ 4: Trả lời ngắn (40 câu)</button>
-                    <button id="btn-set-all" class="btn primary">Ôn tập tất cả (130 câu)</button>
-                </div>
-            </div>
+  <div class="app-container">
 
+    <!-- 1. TRANG CHỦ -->
+    <section id="home-screen" class="screen active">
+      <div class="brand">
+        <div class="brand-icon">📚</div>
+        <h1 class="brand-title">Quiz Study</h1>
+        <p class="brand-desc">Nền tảng ôn tập trắc nghiệm kiến thức thông minh, tiện lợi</p>
+      </div>
+
+      <!-- Khối thống kê tổng quát từ LocalStorage -->
+      <div class="stats-card">
+        <h3>Thống kê học tập</h3>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-number" id="home-total-answered">0</span>
+            <span class="stat-label">Câu đã làm</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number" id="home-total-correct">0</span>
+            <span class="stat-label">Câu đúng</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number" id="home-accuracy">0%</span>
+            <span class="stat-label">Tỷ lệ chính xác</span>
+          </div>
         </div>
+      </div>
 
-        <!-- Màn hình Làm bài -->
-        <div id="quiz-screen" class="screen">
-            <div class="quiz-header">
-                <span id="question-counter" class="badge">Câu 1/30</span>
-                <span id="timer" class="badge timer-badge">00:00</span>
-            </div>
-            <div class="progress-bar-container">
-                <div id="progress-bar"></div>
-            </div>
-            
-            <div class="question-container">
-                <h2 id="question-text">Nội dung câu hỏi?</h2>
-                <div id="options-grid" class="options-grid">
-                    <!-- Đáp án được chèn bằng JS -->
-                </div>
-                
-                <div id="feedback-container" class="feedback hidden">
-                    <p id="feedback-message" class="message"></p>
-                    <p id="feedback-explanation" class="explanation"></p>
-                </div>
-            </div>
-            
-            <button id="btn-next" class="btn primary hidden">Câu tiếp theo</button>
+      <div class="home-actions">
+        <button id="btn-start" class="btn btn-primary btn-large">🚀 Bắt đầu ôn tập</button>
+        <button id="btn-reset-stats" class="btn btn-secondary">🔄 Xóa dữ liệu thống kê</button>
+      </div>
+    </section>
+
+    <!-- 2. TRANG LÀM BÀI -->
+    <section id="quiz-screen" class="screen">
+      <!-- Header phòng thi: tiến trình + thời gian -->
+      <div class="quiz-header">
+        <div class="quiz-progress-text" id="quiz-progress-text">Câu 1/30</div>
+        <div class="quiz-timer" id="quiz-timer">⏱️ 00:00</div>
+      </div>
+
+      <!-- Thanh tiến trình -->
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progress-bar-fill"></div>
+      </div>
+
+      <!-- Nội dung câu hỏi -->
+      <div class="question-container">
+        <h2 class="question-text" id="question-text">Đang tải câu hỏi...</h2>
+      </div>
+
+      <!-- Danh sách 4 đáp án -->
+      <div class="options-grid" id="options-grid">
+        <!-- Render bằng JavaScript -->
+      </div>
+
+      <!-- Khu vực phản hồi (Hiện ra sau khi chọn đáp án) -->
+      <div class="feedback-box hidden" id="feedback-box">
+        <div class="feedback-status" id="feedback-status"></div>
+        <div class="feedback-explanation" id="feedback-explanation"></div>
+      </div>
+
+      <!-- Điều khiển chuyển câu -->
+      <div class="quiz-footer">
+        <button id="btn-next" class="btn btn-primary hidden">Câu tiếp theo ➡️</button>
+      </div>
+    </section>
+
+    <!-- 3. TRANG KẾT QUẢ -->
+    <section id="result-screen" class="screen">
+      <div class="result-header">
+        <div class="result-icon">🏆</div>
+        <h2>Kết Quả Làm Bài</h2>
+        <p id="result-message">Bạn đã hoàn thành lượt ôn tập!</p>
+      </div>
+
+      <!-- Thống kê chi tiết bài vừa làm -->
+      <div class="result-summary">
+        <div class="summary-box">
+          <span class="summary-val" id="res-score">0/0</span>
+          <span class="summary-lbl">Điểm số</span>
         </div>
-
-        <!-- Màn hình Kết quả -->
-        <div id="result-screen" class="screen">
-            <h2>Kết quả bài làm</h2>
-            
-            <div class="result-summary">
-                <div class="score-circle">
-                    <span id="final-score">0/30</span>
-                </div>
-                <div class="result-details">
-                    <p>Thời gian: <strong id="final-time">00:00</strong></p>
-                    <p>Tỷ lệ chính xác: <strong id="final-accuracy">0</strong>%</p>
-                </div>
-            </div>
-            
-            <div id="wrong-answers-container" class="wrong-answers hidden">
-                <h3>Các câu cần ôn lại:</h3>
-                <div id="wrong-answers-list">
-                    <!-- Danh sách câu sai chèn bằng JS -->
-                </div>
-            </div>
-
-            <div class="btn-group">
-                <button id="btn-retry" class="btn primary">Làm lại bài mới</button>
-                <button id="btn-retry-wrong" class="btn secondary hidden">Ôn lại các câu sai</button>
-                <button id="btn-home" class="btn outline">Về trang chủ</button>
-            </div>
+        <div class="summary-box">
+          <span class="summary-val text-green" id="res-correct">0</span>
+          <span class="summary-lbl">Số câu đúng</span>
         </div>
-    </div>
+        <div class="summary-box">
+          <span class="summary-val text-red" id="res-wrong">0</span>
+          <span class="summary-lbl">Số câu sai</span>
+        </div>
+        <div class="summary-box">
+          <span class="summary-val" id="res-accuracy">0%</span>
+          <span class="summary-lbl">Tỷ lệ chính xác</span>
+        </div>
+        <div class="summary-box">
+          <span class="summary-val" id="res-time">00:00</span>
+          <span class="summary-lbl">Thời gian làm</span>
+        </div>
+      </div>
 
-    <!-- Tải script -->
-    <script src="questions.js"></script>
-    <script src="script.js"></script>
+      <!-- Nút hành động sau kết quả -->
+      <div class="result-actions">
+        <button id="btn-restart" class="btn btn-primary">🔁 Làm lại tất cả</button>
+        <button id="btn-review-wrong" class="btn btn-warning">⚠️ Ôn lại câu sai</button>
+        <button id="btn-go-home" class="btn btn-secondary">🏠 Về trang chủ</button>
+      </div>
+
+      <!-- Danh sách chi tiết các câu làm sai -->
+      <div class="wrong-answers-container" id="wrong-answers-container">
+        <h3>Chi tiết các câu cần lưu ý</h3>
+        <div id="wrong-answers-list" class="wrong-answers-list">
+          <!-- Render câu sai bằng JavaScript -->
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Nạp ngân hàng câu hỏi trước, logic ứng dụng sau -->
+  <script src="questions.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

@@ -1,279 +1,353 @@
 /**
- * App Logic cho Quiz Study
- * Cấu trúc này được viết bằng JS thuần nhưng phân tách state/UI riêng biệt,
- * tư duy Component-based. Rất thuận tiện để sau này bạn chuyển sang ReactJS
- * hoặc mở rộng thành kiến trúc Full-stack với Node.js/Express.
+ * TRÌNH ĐIỀU KHIỂN HỆ THỐNG QUIZ STUDY (script.js)
+ * Chức năng:
+ * - Trộn câu hỏi và trộn thứ tự đáp án (không làm sai lệch đáp án đúng).
+ * - Đếm giờ, thanh tiến trình, hiển thị màu đúng/sai tức thì kèm giải thích.
+ * - Lưu thống kê tổng hợp (tổng câu, câu đúng, tỷ lệ) vào LocalStorage.
+ * - Hỗ trợ chế độ "Ôn lại các câu trả lời sai".
  */
 
-// --- Quản lý State (Trạng thái) ---
-const state = {
-    currentQuestions: [],
-    currentIndex: 0,
-    score: 0,
-    wrongAnswersList: [],
-    timerInterval: null,
-    timeElapsed: 0 // giây
+// --- 1. BIẾN TRẠNG THÁI (STATE) ---
+let currentQuizSet = [];          // Danh sách câu hỏi đang làm
+let currentQuestionIndex = 0;     // Vị trí câu hỏi hiện tại
+let score = 0;                    // Số câu đúng lượt này
+let wrongAnswersHistory = [];     // Danh sách các câu làm sai lượt này
+let hasAnswered = false;          // Khóa không cho chọn nhiều lần
+let timerInterval = null;         // Bộ đếm thời gian
+let elapsedSeconds = 0;           // Thời gian làm bài tính bằng giây
+
+// Key lưu trữ LocalStorage
+const STORAGE_KEY = 'quiz_study_cumulative_stats';
+
+// --- 2. CÁC PHẦN TỬ GIAO DIỆN (DOM ELEMENTS) ---
+const screens = {
+  home: document.getElementById('home-screen'),
+  quiz: document.getElementById('quiz-screen'),
+  result: document.getElementById('result-screen')
 };
 
-// --- DOM Elements ---
-const DOM = {
-    screens: {
-        home: document.getElementById('home-screen'),
-        quiz: document.getElementById('quiz-screen'),
-        result: document.getElementById('result-screen')
-    },
-    home: {
-        total: document.getElementById('stat-total'),
-        correct: document.getElementById('stat-correct'),
-        accuracy: document.getElementById('stat-accuracy')
-    },
-    quiz: {
-        counter: document.getElementById('question-counter'),
-        timer: document.getElementById('timer'),
-        progressBar: document.getElementById('progress-bar'),
-        questionText: document.getElementById('question-text'),
-        optionsGrid: document.getElementById('options-grid'),
-        feedbackContainer: document.getElementById('feedback-container'),
-        feedbackMsg: document.getElementById('feedback-message'),
-        feedbackExp: document.getElementById('feedback-explanation'),
-        btnNext: document.getElementById('btn-next')
-    },
-    result: {
-        score: document.getElementById('final-score'),
-        time: document.getElementById('final-time'),
-        accuracy: document.getElementById('final-accuracy'),
-        wrongContainer: document.getElementById('wrong-answers-container'),
-        wrongList: document.getElementById('wrong-answers-list'),
-        btnRetryWrong: document.getElementById('btn-retry-wrong')
-    }
-};
+// Home Elements
+const homeTotalAnswered = document.getElementById('home-total-answered');
+const homeTotalCorrect = document.getElementById('home-total-correct');
+const homeAccuracy = document.getElementById('home-accuracy');
+const btnStart = document.getElementById('btn-start');
+const btnResetStats = document.getElementById('btn-reset-stats');
 
-// --- Khởi tạo ứng dụng ---
-document.addEventListener('DOMContentLoaded', () => {
-    updateHomeStats();
-    
-    // Đăng ký sự kiện (Event Listeners)
-    document.getElementById('btn-set1').addEventListener('click', () => startQuiz('set1'));
-    document.getElementById('btn-set2').addEventListener('click', () => startQuiz('set2'));
-    document.getElementById('btn-set3').addEventListener('click', () => startQuiz('set3'));
-    document.getElementById('btn-set-short').addEventListener('click', () => startQuiz('setShort'));
-    document.getElementById('btn-set-all').addEventListener('click', () => startQuiz('all'));
-    document.getElementById('btn-retry').addEventListener('click', () => startQuiz(state.currentMode));
-    DOM.result.btnRetryWrong.addEventListener('click', () => startQuiz('wrong'));
-    document.getElementById('btn-home').addEventListener('click', () => showScreen('home'));
-    DOM.quiz.btnNext.addEventListener('click', nextQuestion);
-});
+// Quiz Elements
+const quizProgressText = document.getElementById('quiz-progress-text');
+const quizTimer = document.getElementById('quiz-timer');
+const progressBarFill = document.getElementById('progress-bar-fill');
+const questionText = document.getElementById('question-text');
+const optionsGrid = document.getElementById('options-grid');
+const feedbackBox = document.getElementById('feedback-box');
+const feedbackStatus = document.getElementById('feedback-status');
+const feedbackExplanation = document.getElementById('feedback-explanation');
+const btnNext = document.getElementById('btn-next');
 
-// Chuyển đổi giữa các màn hình
-function showScreen(screenName) {
-    Object.values(DOM.screens).forEach(screen => screen.classList.remove('active'));
-    DOM.screens[screenName].classList.add('active');
-    if(screenName === 'home') updateHomeStats();
+// Result Elements
+const resScore = document.getElementById('res-score');
+const resCorrect = document.getElementById('res-correct');
+const resWrong = document.getElementById('res-wrong');
+const resAccuracy = document.getElementById('res-accuracy');
+const resTime = document.getElementById('res-time');
+const wrongAnswersContainer = document.getElementById('wrong-answers-container');
+const wrongAnswersList = document.getElementById('wrong-answers-list');
+const btnRestart = document.getElementById('btn-restart');
+const btnReviewWrong = document.getElementById('btn-review-wrong');
+const btnGoHome = document.getElementById('btn-go-home');
+
+// --- 3. TIỆN ÍCH HỖ TRỢ (UTILITIES) ---
+
+// Chuyển đổi màn hình hiển thị
+function switchScreen(screenName) {
+  Object.values(screens).forEach(screen => screen.classList.remove('active'));
+  screens[screenName].classList.add('active');
 }
 
-// --- Logic Trắc nghiệm ---
-
-// Bắt đầu làm bài (mode: 'all' hoặc 'wrong')
-function startQuiz(mode) {
-    state.currentMode = mode;
-    if (mode === 'set1') {
-        state.currentQuestions = shuffleArray([...questionSets.set1]);
-    } else if (mode === 'set2') {
-        state.currentQuestions = shuffleArray([...questionSets.set2]);
-    } else if (mode === 'set3') {
-        state.currentQuestions = shuffleArray([...questionSets.set3]);
-    } else if (mode === 'setShort') {
-        state.currentQuestions = shuffleArray([...questionSets.setShort]);
-    } else if (mode === 'all') {
-        const allQuestions = [...questionSets.set1, ...questionSets.set2, ...questionSets.set3, ...questionSets.setShort];
-        state.currentQuestions = shuffleArray(allQuestions);
-    } else if (mode === 'wrong') {
-        state.currentQuestions = shuffleArray([...state.wrongAnswersList.map(item => item.questionObj)]);
-    }
-
-    if (state.currentQuestions.length === 0) {
-        alert("Không có câu hỏi nào để hiển thị!");
-        return;
-    }
-
-    // Reset state
-    state.currentIndex = 0;
-    state.score = 0;
-    state.wrongAnswersList = [];
-    state.timeElapsed = 0;
-    
-    startTimer();
-    showScreen('quiz');
-    renderQuestion();
-}
-
-// Render nội dung 1 câu hỏi
-function renderQuestion() {
-    const q = state.currentQuestions[state.currentIndex];
-    
-    // Cập nhật Header & Thanh tiến trình
-    DOM.quiz.counter.textContent = `Câu ${state.currentIndex + 1}/${state.currentQuestions.length}`;
-    const progressPercent = (state.currentIndex / state.currentQuestions.length) * 100;
-    DOM.quiz.progressBar.style.width = `${progressPercent}%`;
-    
-    // Hiển thị nội dung câu hỏi
-    DOM.quiz.questionText.textContent = q.question;
-    
-    // Xử lý xáo trộn thứ tự các lựa chọn đáp án
-    DOM.quiz.optionsGrid.innerHTML = '';
-    
-    // Map đáp án với thuộc tính isCorrect để khi xáo trộn không bị mất vị trí đáp án đúng
-    let mappedOptions = q.options.map((optText, index) => ({
-        text: optText,
-        isCorrect: index === q.answer
-    }));
-    mappedOptions = shuffleArray(mappedOptions);
-    
-    // Render các nút đáp án
-    mappedOptions.forEach((opt) => {
-        const btn = document.createElement('button');
-        btn.className = 'option-btn';
-        btn.textContent = opt.text;
-        btn.addEventListener('click', () => handleSelectOption(btn, opt, mappedOptions, q));
-        DOM.quiz.optionsGrid.appendChild(btn);
-    });
-
-    // Reset UI trạng thái
-    DOM.quiz.feedbackContainer.classList.add('hidden');
-    DOM.quiz.btnNext.classList.add('hidden');
-}
-
-// Xử lý khi người dùng click chọn 1 đáp án
-function handleSelectOption(selectedBtn, selectedOpt, allOptions, questionObj) {
-    // 1. Vô hiệu hóa (disable) tất cả các nút đáp án để tránh click nhiều lần
-    const buttons = document.querySelectorAll('.option-btn');
-    buttons.forEach(btn => btn.disabled = true);
-    
-    // 2. Reset classes cho feedback container
-    DOM.quiz.feedbackContainer.className = 'feedback'; 
-    
-    // 3. Kiểm tra đúng/sai
-    if (selectedOpt.isCorrect) {
-        selectedBtn.classList.add('correct');
-        DOM.quiz.feedbackContainer.classList.add('success');
-        DOM.quiz.feedbackMsg.textContent = '✅ Chính xác!';
-        state.score++;
-    } else {
-        selectedBtn.classList.add('wrong');
-        DOM.quiz.feedbackContainer.classList.add('error');
-        DOM.quiz.feedbackMsg.textContent = '❌ Chưa chính xác!';
-        
-        // Highlight hiển thị đáp án đúng thực sự
-        const correctIndex = allOptions.findIndex(o => o.isCorrect);
-        buttons[correctIndex].classList.add('correct');
-        
-        // Lưu câu sai vào mảng để phục vụ màn hình kết quả / tính năng ôn tập
-        state.wrongAnswersList.push({
-            questionObj: questionObj,
-            userChoice: selectedOpt.text,
-            correctChoice: allOptions[correctIndex].text,
-            explanation: questionObj.explanation
-        });
-    }
-    
-    // 4. Hiển thị giải thích & nút Next
-    DOM.quiz.feedbackExp.textContent = questionObj.explanation || '';
-    DOM.quiz.feedbackContainer.classList.remove('hidden');
-    DOM.quiz.btnNext.classList.remove('hidden');
-}
-
-// Chuyển sang câu tiếp theo
-function nextQuestion() {
-    state.currentIndex++;
-    if (state.currentIndex < state.currentQuestions.length) {
-        renderQuestion();
-    } else {
-        endQuiz(); // Hết câu hỏi
-    }
-}
-
-// Kết thúc bài làm
-function endQuiz() {
-    stopTimer();
-    
-    // Kéo thanh progress đầy 100%
-    DOM.quiz.progressBar.style.width = `100%`;
-    
-    // Lưu kết quả vào LocalStorage
-    saveToLocalStorage(state.currentQuestions.length, state.score);
-    
-    // Cập nhật UI màn hình kết quả
-    DOM.result.score.textContent = `${state.score}/${state.currentQuestions.length}`;
-    DOM.result.time.textContent = formatTime(state.timeElapsed);
-    
-    const accuracy = Math.round((state.score / state.currentQuestions.length) * 100);
-    DOM.result.accuracy.textContent = accuracy;
-    
-    // Vẽ danh sách các câu trả lời sai
-    if (state.wrongAnswersList.length > 0) {
-        DOM.result.wrongContainer.classList.remove('hidden');
-        DOM.result.btnRetryWrong.classList.remove('hidden');
-        
-        DOM.result.wrongList.innerHTML = state.wrongAnswersList.map((item, idx) => `
-            <div class="wrong-item">
-                <h4>Câu ${idx + 1}: ${item.questionObj.question}</h4>
-                <p>Bạn đã chọn: <span class="text-danger">${item.userChoice}</span></p>
-                <p>Đáp án đúng: <span class="text-success">${item.correctChoice}</span></p>
-                ${item.explanation ? `<p class="explanation-text">💡 Giải thích: ${item.explanation}</p>` : ''}
-            </div>
-        `).join('');
-    } else {
-        DOM.result.wrongContainer.classList.add('hidden');
-        DOM.result.btnRetryWrong.classList.add('hidden');
-    }
-    
-    showScreen('result');
-}
-
-// --- Tiện ích (Helpers) ---
-
-// Thuật toán xáo trộn mảng (Fisher-Yates)
+// Hàm xáo trộn mảng (Fisher-Yates Shuffle)
 function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
-// --- Bộ đếm thời gian ---
+// Chuẩn bị dữ liệu câu hỏi: Xáo trộn câu và xáo trộn đáp án an toàn
+function prepareQuizData(rawQuestions) {
+  const shuffledQuestions = shuffleArray(rawQuestions);
+
+  return shuffledQuestions.map(item => {
+    // Lấy nội dung đáp án đúng ban đầu
+    const correctOptionText = item.options[item.answer];
+    // Xáo trộn 4 đáp án
+    const shuffledOptions = shuffleArray(item.options);
+    // Tìm index mới của đáp án đúng sau khi đã xáo trộn
+    const newCorrectIndex = shuffledOptions.indexOf(correctOptionText);
+
+    return {
+      question: item.question,
+      options: shuffledOptions,
+      answer: newCorrectIndex,
+      explanation: item.explanation
+    };
+  });
+}
+
+// Định dạng thời gian (giây -> MM:SS)
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+}
+
+// --- 4. QUẢN LÝ BỘ ĐẾM GIỜ ---
 function startTimer() {
-    DOM.quiz.timer.textContent = formatTime(state.timeElapsed);
-    state.timerInterval = setInterval(() => {
-        state.timeElapsed++;
-        DOM.quiz.timer.textContent = formatTime(state.timeElapsed);
-    }, 1000);
+  clearInterval(timerInterval);
+  elapsedSeconds = 0;
+  quizTimer.textContent = `⏱️ 00:00`;
+  timerInterval = setInterval(() => {
+    elapsedSeconds++;
+    quizTimer.textContent = `⏱️ ${formatTime(elapsedSeconds)}`;
+  }, 1000);
 }
 
 function stopTimer() {
-    clearInterval(state.timerInterval);
+  clearInterval(timerInterval);
 }
 
-function formatTime(seconds) {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+// --- 5. QUẢN LÝ LOCALSTORAGE (THỐNG KÊ LŨY KẾ) ---
+function loadHomeStats() {
+  const rawData = localStorage.getItem(STORAGE_KEY);
+  if (!rawData) {
+    homeTotalAnswered.textContent = '0';
+    homeTotalCorrect.textContent = '0';
+    homeAccuracy.textContent = '0%';
+    return;
+  }
+
+  const stats = JSON.parse(rawData);
+  homeTotalAnswered.textContent = stats.totalAnswered;
+  homeTotalCorrect.textContent = stats.totalCorrect;
+  const rate = stats.totalAnswered > 0 
+    ? Math.round((stats.totalCorrect / stats.totalAnswered) * 100) 
+    : 0;
+  homeAccuracy.textContent = `${rate}%`;
 }
 
-// --- LocalStorage ---
-function saveToLocalStorage(totalQ, correctQ) {
-    let stats = JSON.parse(localStorage.getItem('quizStats')) || { played: 0, correct: 0, total: 0 };
-    stats.played++;
-    stats.correct += correctQ;
-    stats.total += totalQ;
-    localStorage.setItem('quizStats', JSON.stringify(stats));
+function updateLocalStorageStats(answeredCount, correctCount) {
+  const rawData = localStorage.getItem(STORAGE_KEY);
+  let stats = rawData ? JSON.parse(rawData) : { totalAnswered: 0, totalCorrect: 0 };
+
+  stats.totalAnswered += answeredCount;
+  stats.totalCorrect += correctCount;
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
 }
 
-function updateHomeStats() {
-    let stats = JSON.parse(localStorage.getItem('quizStats')) || { played: 0, correct: 0, total: 0 };
-    DOM.home.total.textContent = stats.total;
-    DOM.home.correct.textContent = stats.correct;
+// --- 6. TIẾN TRÌNH LÀM BÀI TRẮC NGHIỆM ---
+
+// Khởi tạo bài trắc nghiệm mới
+function startQuiz(questionsList) {
+  if (!questionsList || questionsList.length === 0) {
+    alert("Không có câu hỏi nào để ôn tập!");
+    return;
+  }
+
+  currentQuizSet = prepareQuizData(questionsList);
+  currentQuestionIndex = 0;
+  score = 0;
+  wrongAnswersHistory = [];
+  
+  switchScreen('quiz');
+  startTimer();
+  renderQuestion();
+}
+
+// Hiển thị câu hỏi hiện tại
+function renderQuestion() {
+  hasAnswered = false;
+  btnNext.classList.add('hidden');
+  feedbackBox.classList.add('hidden');
+  feedbackBox.className = 'feedback-box hidden';
+
+  const currentQ = currentQuizSet[currentQuestionIndex];
+  const total = currentQuizSet.length;
+
+  // Cập nhật text tiến trình & thanh tiến trình (progress bar)
+  quizProgressText.textContent = `Câu ${currentQuestionIndex + 1}/${total}`;
+  const progressPercent = ((currentQuestionIndex + 1) / total) * 100;
+  progressBarFill.style.width = `${progressPercent}%`;
+
+  // Hiển thị câu hỏi
+  questionText.textContent = currentQ.question;
+
+  // Tạo 4 nút đáp án A, B, C, D
+  optionsGrid.innerHTML = '';
+  const labels = ['A', 'B', 'C', 'D'];
+
+  currentQ.options.forEach((optionText, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn';
+    btn.innerHTML = `<span class="option-tag">${labels[idx]}.</span> <span>${optionText}</span>`;
+    btn.addEventListener('click', () => handleSelectOption(idx));
+    optionsGrid.appendChild(btn);
+  });
+}
+
+// Xử lý khi người dùng nhấn chọn đáp án
+function handleSelectOption(selectedIndex) {
+  if (hasAnswered) return; // Khóa nếu đã trả lời
+  hasAnswered = true;
+
+  const currentQ = currentQuizSet[currentQuestionIndex];
+  const isCorrect = selectedIndex === currentQ.answer;
+  const optionButtons = optionsGrid.querySelectorAll('.option-btn');
+
+  // Khóa tất cả các nút để tránh chọn lại
+  optionButtons.forEach(btn => btn.disabled = true);
+
+  if (isCorrect) {
+    score++;
+    optionButtons[selectedIndex].classList.add('correct');
     
-    const accuracy = stats.total === 0 ? 0 : Math.round((stats.correct / stats.total) * 100);
-    DOM.home.accuracy.textContent = `${accuracy}%`;
+    // Hiển thị feedback đúng
+    feedbackBox.classList.remove('hidden');
+    feedbackBox.classList.add('correct');
+    feedbackStatus.textContent = '🎉 Chính xác!';
+    feedbackExplanation.textContent = currentQ.explanation;
+  } else {
+    // Đánh dấu nút đã bấm sai và nút đúng thực sự
+    optionButtons[selectedIndex].classList.add('wrong');
+    optionButtons[currentQ.answer].classList.add('correct');
+
+    // Lưu lại thông tin câu sai để xem lại ở trang kết quả
+    wrongAnswersHistory.push({
+      question: currentQ.question,
+      userChoice: currentQ.options[selectedIndex],
+      correctChoice: currentQ.options[currentQ.answer],
+      explanation: currentQ.explanation
+    });
+
+    // Hiển thị feedback sai
+    feedbackBox.classList.remove('hidden');
+    feedbackBox.classList.add('wrong');
+    feedbackStatus.textContent = '❌ Chưa chính xác!';
+    feedbackExplanation.innerHTML = `<strong>Đáp án đúng:</strong> ${currentQ.options[currentQ.answer]}<br>${currentQ.explanation}`;
+  }
+
+  // Đổi nhãn nút nếu là câu cuối cùng
+  if (currentQuestionIndex === currentQuizSet.length - 1) {
+    btnNext.textContent = 'Hoàn thành & Xem kết quả 🏁';
+  } else {
+    btnNext.textContent = 'Câu tiếp theo ➡️';
+  }
+
+  btnNext.classList.remove('hidden');
 }
+
+// Chuyển sang câu tiếp theo
+btnNext.addEventListener('click', () => {
+  if (!hasAnswered) {
+    alert("Vui lòng chọn một đáp án trước khi qua câu tiếp theo!");
+    return;
+  }
+
+  currentQuestionIndex++;
+  if (currentQuestionIndex < currentQuizSet.length) {
+    renderQuestion();
+  } else {
+    finishQuiz();
+  }
+});
+
+// --- 7. HOÀN THÀNH BÀI & TRANG KẾT QUẢ ---
+function finishQuiz() {
+  stopTimer();
+
+  const total = currentQuizSet.length;
+  const wrongCount = total - score;
+  const accuracy = Math.round((score / total) * 100);
+
+  // Lưu thống kê vào LocalStorage
+  updateLocalStorageStats(total, score);
+
+  // Hiển thị dữ liệu lên trang kết quả
+  resScore.textContent = `${score}/${total}`;
+  resCorrect.textContent = score;
+  resWrong.textContent = wrongCount;
+  resAccuracy.textContent = `${accuracy}%`;
+  resTime.textContent = formatTime(elapsedSeconds);
+
+  // Xử lý nút "Ôn lại câu sai"
+  if (wrongAnswersHistory.length === 0) {
+    btnReviewWrong.style.display = 'none';
+    wrongAnswersContainer.classList.add('hidden');
+  } else {
+    btnReviewWrong.style.display = 'inline-flex';
+    wrongAnswersContainer.classList.remove('hidden');
+    renderWrongAnswersList();
+  }
+
+  switchScreen('result');
+}
+
+// Hiển thị danh sách chi tiết các câu đã làm sai
+function renderWrongAnswersList() {
+  wrongAnswersList.innerHTML = '';
+  wrongAnswersHistory.forEach((item, index) => {
+    const card = document.createElement('div');
+    card.className = 'wrong-item';
+    card.innerHTML = `
+      <div class="wrong-item-title">Câu ${index + 1}: ${item.question}</div>
+      <div class="wrong-item-row text-red"><strong>Bạn đã chọn:</strong> ${item.userChoice}</div>
+      <div class="wrong-item-row text-green"><strong>Đáp án đúng:</strong> ${item.correctChoice}</div>
+      <div class="wrong-item-exp"><strong>Giải thích:</strong> ${item.explanation}</div>
+    `;
+    wrongAnswersList.appendChild(card);
+  });
+}
+
+// --- 8. SỰ KIỆN ĐIỀU HƯỚNG VÀ TƯƠNG TÁC ---
+
+// Bắt đầu làm bài từ trang chủ
+btnStart.addEventListener('click', () => {
+  startQuiz(quizQuestions);
+});
+
+// Làm lại toàn bộ từ đầu
+btnRestart.addEventListener('click', () => {
+  startQuiz(quizQuestions);
+});
+
+// Ôn lại duy nhất các câu đã làm sai
+btnReviewWrong.addEventListener('click', () => {
+  if (wrongAnswersHistory.length === 0) return;
+
+  // Lọc lại các câu hỏi gốc tương ứng với các câu sai
+  const questionsToReview = quizQuestions.filter(q => 
+    wrongAnswersHistory.some(wrong => wrong.question === q.question)
+  );
+
+  startQuiz(questionsToReview);
+});
+
+// Quay về trang chủ
+btnGoHome.addEventListener('click', () => {
+  loadHomeStats();
+  switchScreen('home');
+});
+
+// Xóa dữ liệu lịch sử
+btnResetStats.addEventListener('click', () => {
+  if (confirm("Bạn có chắc chắn muốn đặt lại toàn bộ số liệu thống kê?")) {
+    localStorage.removeItem(STORAGE_KEY);
+    loadHomeStats();
+  }
+});
+
+// Khởi chạy khi nạp trang
+document.addEventListener('DOMContentLoaded', () => {
+  loadHomeStats();
+});
